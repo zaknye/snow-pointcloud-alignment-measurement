@@ -7,11 +7,12 @@ import sys
 
 # parse command line arguments
 try:
-    str(source) = sys.argv[0]
-    str(target) = sys.argv[1]
+    source_folder = str(sys.argv[1])
+    target_folder = str(sys.argv[2])
 except:
     raise SystemExit(f"Missing first argument. \n Usage: <source folder> <target folder>")
 
+print(source_folder)
 def preprocess_point_cloud(pcd, voxel_size):
     print(":: Downsample with a voxel size %.3f." % voxel_size)
     pcd_down = pcd.voxel_down_sample(voxel_size)
@@ -31,10 +32,10 @@ def preprocess_point_cloud(pcd, voxel_size):
         o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100))
     return pcd_down, pcd_fpfh
 
-def prepare_dataset(voxel_size):
+def prepare_dataset(voxel_size, source_folder, target_folder):
     print(":: Load two point clouds")
-    source = o3d.io.read_point_cloud(source + "/corner.pcd")
-    target = o3d.io.read_point_cloud(target + "/corner.pcd")
+    source = o3d.io.read_point_cloud(source_folder + "/corner.pcd")
+    target = o3d.io.read_point_cloud(target_folder + "/corner.pcd")
 
     source_down, source_fpfh = preprocess_point_cloud(source, voxel_size)
     target_down, target_fpfh = preprocess_point_cloud(target, voxel_size)
@@ -57,7 +58,7 @@ def remove_ground_points(pcd, z_threshold):
 
 voxel_size = 0.4
 source, target, source_down, target_down, source_fpfh, target_fpfh = prepare_dataset(
-    voxel_size)
+    voxel_size, source_folder, target_folder)
 
 def execute_global_registration(source_down, target_down, source_fpfh,
                                 target_fpfh, voxel_size):
@@ -103,8 +104,8 @@ def refine_registration(source, target, source_fpfh, target_fpfh, voxel_size):
 result_icp = refine_registration(source, target, source_fpfh, target_fpfh,
                                  voxel_size)
 
-before_snow = o3d.io.read_point_cloud(source + "/all_points.pcd")
-after_snow = o3d.io.read_point_cloud(target + "/all_points.pcd")
+before_snow = o3d.io.read_point_cloud(source_folder + "/all_points.pcd")
+after_snow = o3d.io.read_point_cloud(target_folder + "/all_points.pcd")
 
 # apply calculated transformations and output the all points clouds for m3c2 distance calculation
 before_snow = copy.deepcopy(before_snow).transform(result_icp.transformation)
@@ -113,4 +114,7 @@ o3d.io.write_point_cloud("after_aligned.pcd", after_snow)
 
 # run cloudcompare in BASH command
 # This assumes cloud compare was installed using the SNAPD package
-os.system('cloudcompare.CloudCompare - SILENT -O "after_aligned.pcd" -O "before_aligned.pcd" -M3C2 "m3c2_params.txt" -SAVE_CLOUDS')
+os.system('cloudcompare.CloudCompare -SILENT -O "after_aligned.pcd" -O "before_aligned.pcd" -M3C2 "m3c2_params.txt" -SAVE_CLOUDS')
+
+print("Calculation successful")
+print("M3C2 Scalar field stored in local folder")
