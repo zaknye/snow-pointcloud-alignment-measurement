@@ -4,7 +4,6 @@ import copy
 import os
 import sys
 
-
 # parse command line arguments
 try:
     source_folder = str(sys.argv[1])
@@ -12,10 +11,12 @@ try:
 except:
     raise SystemExit(f"Missing first argument. \n Usage: <source folder> <target folder>")
 
-print(source_folder)
+# loads the corner version of the LIVOX sensor output
+# estimates normal vectors, aligns them to the same plane, and filters ground points
 def preprocess_point_cloud(pcd, voxel_size):
     print(":: Downsample with a voxel size %.3f." % voxel_size)
     pcd_down = pcd.voxel_down_sample(voxel_size)
+    pcd_down, ind = pcd_down.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
 
     radius_normal = voxel_size * 2
     print(":: Estimate normal with search radius %.3f." % radius_normal)
@@ -42,7 +43,6 @@ def prepare_dataset(voxel_size, source_folder, target_folder):
     return source, target, source_down, target_down, source_fpfh, target_fpfh
 
 def remove_ground_points(pcd, z_threshold):
-
     pop_list = []
     for i, normal in enumerate(pcd.normals):
         if normal[2] > z_threshold:
@@ -53,9 +53,9 @@ def remove_ground_points(pcd, z_threshold):
     for item in pop_list:
         pcd.normals.pop(item)
         pcd.points.pop(item)
-
     return pcd
 
+# set voxel size for downsampling and ICP
 voxel_size = 0.4
 source, target, source_down, target_down, source_fpfh, target_fpfh = prepare_dataset(
     voxel_size, source_folder, target_folder)
@@ -107,14 +107,24 @@ result_icp = refine_registration(source, target, source_fpfh, target_fpfh,
 before_snow = o3d.io.read_point_cloud(source_folder + "/all_points.pcd")
 after_snow = o3d.io.read_point_cloud(target_folder + "/all_points.pcd")
 
+def process_all_points(pcd):
+    pcd_down = pcd.voxel_down_sample(voxel_size=0.02)
+    pcd_out, ind = pcd_down.remove_radius_outlier(nb_points=10, radius=0.06)
+    return pcd_out
+
+# process all points clouds
+before_snow_out = process_all_points(before_snow)
+after_snow_out = process_all_points(after_snow)
 # apply calculated transformations and output the all points clouds for m3c2 distance calculation
-before_snow = copy.deepcopy(before_snow).transform(result_icp.transformation)
-o3d.io.write_point_cloud("before_aligned.pcd", before_snow)
-o3d.io.write_point_cloud("after_aligned.pcd", after_snow)
+before_snow_out = copy.deepcopy(before_snow_out).transform(result_icp.transformation)
+o3d.io.write_point_cloud("before_aligned.pcd", before_snow_out)
+o3d.io.write_point_cloud("after_aligned.pcd", after_snow_out)
+
 
 # run cloudcompare in BASH command
 # This assumes cloud compare was installed using the SNAPD package
-os.system('cloudcompare.CloudCompare -SILENT -O "after_aligned.pcd" -O "before_aligned.pcd" -M3C2 "m3c2_params.txt" -SAVE_CLOUDS')
+# output is in cloud compare BIN file type
+os.system('cloudcompare.CloudCompare -O "before_aligned.pcd" -O "after_aligned.pcd" -M3C2 "m3c2_params.txt" -FILTER_SF 0.06 100 -C_EXPORT_FMT "PCD"')
 
 print("Calculation successful")
 print("M3C2 Scalar field stored in local folder")
